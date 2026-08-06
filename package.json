@@ -19,15 +19,13 @@
   },
   "author": "Harel Mazor",
   "license": "MIT",
-  "type": "commonjs",
-  "main": "dist/maplibregl-recorder.js",
+  "type": "module",
   "module": "dist/maplibregl-recorder.mjs",
   "types": "dist/maplibregl-recorder.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/maplibregl-recorder.mjs",
-      "require": "./dist/maplibregl-recorder.js",
-      "types": "./dist/maplibregl-recorder.d.ts"
+      "types": "./dist/maplibregl-recorder.d.ts",
+      "import": "./dist/maplibregl-recorder.mjs"
     },
     "./dist/maplibregl-recorder.css": "./dist/maplibregl-recorder.css"
   },
