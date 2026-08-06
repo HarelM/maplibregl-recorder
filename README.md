@@ -280,7 +280,8 @@ npm run docs        # the generated API documentation
 
 The demo at `test/demo.html` browses a list of places with prev/next buttons, with
 terrain on by default (`?terrain=0` turns it off), and has the recorder attached
-and its control on the map — a realistic thing to record. Serve the repo root and open it after `npm run build`.
+and its control on the map — a realistic thing to record. Serve the repo root and
+open it after `npm run build-dist`.
 
 ## License
 

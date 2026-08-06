@@ -31,4 +31,16 @@ export { MaplibreRecorder, Recorder } from './recorder';
 export { RecorderControl } from './recorder-control';
 export { emitScript } from './emit';
 export { buildReproPage } from './page';
-export type { RecordedOp, RecorderOptions, Recording, SerializedValue } from './types';
+export type {
+    CallOp,
+    EventOp,
+    MapCallState,
+    MarkOp,
+    NewOp,
+    RecordedOp,
+    RecorderOptions,
+    Recording,
+    RecordingEnvironment,
+    TimelineEntry,
+    SerializedValue
+} from './types';
