@@ -4,28 +4,51 @@ on:
   push:
     branches: [ main ]
 
+# Pages is served from the artifact this workflow uploads, so there is no
+# gh-pages branch to push to and no need to hand the job write access to the
+# repository. `id-token` is what lets the deployment prove it came from here.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A run still waiting in the queue is superseded, but a
+# run already deploying is left to finish rather than cancelled halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   publish-docs:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     defaults:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Use Node.js x64
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
 
-      - name: Install build dependencies
+      - name: Build the docs
         run: |
           npm ci
           npm run build-dist
           npm run docs
-      - name: Publish the docs
-        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload the docs
+        uses: actions/upload-pages-artifact@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs
-          commit_message: 'deploy docs'
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5
