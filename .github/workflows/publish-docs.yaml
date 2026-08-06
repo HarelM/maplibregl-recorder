@@ -52,3 +52,10 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v5
+        with:
+          # Pages takes eight to ten minutes to serve a deployment for this
+          # repository, which is close enough to the ten minute default to fail
+          # roughly half the time. The wait is on GitHub's side and nothing here
+          # makes it shorter, so give it room rather than cancel a deployment
+          # that was going to succeed.
+          timeout: 1800000
