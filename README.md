@@ -145,23 +145,15 @@ The split is deliberate:
 
 ## Export
 
-Everything the control does is also on the control itself, from the console:
+The ⤓ button saves `maplibre-repro.html`. Everything it does is on the control
+itself too, so the console can reach it — saving the raw recording, copying the
+page, opening it in a new tab or in CodePen. See
+[`RecorderControl`](https://harelm.github.io/maplibregl-recorder/classes/RecorderControl.html).
+
+With no user interface in play, the conversions are plain functions:
 
 ```js
-const control = new RecorderControl();  // or the one you already added
-control.download();      // save maplibre-repro.html
-control.downloadJSON();  // save the raw recording
-control.copy();          // copy the page, ready to paste into JS Bin
-control.open();          // open the reproduction in a new tab
-control.openInCodePen(); // open it in CodePen
-control.toHTML();        // the page, as a string
-control.toScript();      // just the JavaScript
-```
-
-With no user interface in play, the same two conversions are plain functions:
-
-```js
-import { emitScript, buildReproPage } from 'maplibregl-recorder';
+import { buildReproPage } from 'maplibregl-recorder';
 
 buildReproPage(MaplibreRecorder.toJSON());
 ```
@@ -217,23 +209,11 @@ Values with no literal syntax are written out in full rather than through a
 helper: a marker element is a `createContextualFragment(...)` line, an image is
 `new Image()` plus a `src`, binary data is `Uint8Array.from(atob(...), ...)`.
 
-## Options
+## Before you send it to anyone
 
-```js
-MaplibreRecorder.attach(maplibregl, {
-    recordFunctions: true,       // capture the source of function arguments
-    recordEvents: true,          // annotate the timeline with map events
-    captureElementStyles: true,  // freeze computed CSS of custom marker elements
-    recordNestedCalls: true,     // keep MapLibre's internal calls for context
-    recordGestures: true,        // reconstruct hand pans and zooms as a jumpTo
-    maxOps: 20000,               // stop recording after this many operations
-    inlineStyle: false,          // embed map.getStyle() instead of the style URL
-    maxDelay: 4000,              // longest pause the script waits between calls
-    maplibreVersion: undefined   // MapLibre version the exported page loads
-});
-```
-
-Two of these matter for reproductions that leave your machine:
+`attach` takes a second argument of options —
+[`RecorderOptions`](https://harelm.github.io/maplibregl-recorder/types/RecorderOptions.html)
+has the list. Two of them matter for reproductions that leave your machine:
 
 - `recordFunctions` stores the source text of callbacks such as
   `transformRequest`. **Turn it off if your callbacks contain API keys.**
@@ -283,31 +263,19 @@ Not captured:
 
 ## API
 
-| Export | What it is |
-| --- | --- |
-| `MaplibreRecorder` | the shared recorder instance; what you normally use |
-| `Recorder` | the engine class, if you want your own instance |
-| `RecorderControl` | the panel, as a MapLibre control; also does the exporting |
-| `emitScript(recording)` | turn a recording into JavaScript source |
-| `buildReproPage(recording, fragment?)` | wrap that source in an HTML page |
+**<https://harelm.github.io/maplibregl-recorder/>** — every export, method and
+option, generated from the source so it cannot drift from it.
 
-Full generated docs: <https://harelm.github.io/maplibregl-recorder/>
-
-## Builds
-
-| File | Use |
-| --- | --- |
-| `dist/maplibregl-recorder.mjs` | ES module |
-| `dist/maplibregl-recorder.js` | CommonJS, for `require()` |
-| `dist/maplibregl-recorder.css` | the control's stylesheet; needed only if you use `RecorderControl` |
+Start at `Recorder` for the engine, `RecorderControl` for the panel and the
+exporting, and `RecorderOptions` for what `attach` accepts.
 
 ## Develop
 
 ```bash
 npm install
-npm run build-dist  # bundles, plus the control's stylesheet
-npm test            # node tests, plus browser tests in headless chromium
+npm run build-dist  # the bundle, plus the control's stylesheet
 npm run typecheck
+npm run docs        # the generated API documentation
 ```
 
 The demo at `test/demo.html` browses a list of places with prev/next buttons, with
