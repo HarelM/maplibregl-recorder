@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "module": "es2022",
+    "moduleResolution": "node",
+    "target": "esnext",
+    "types": [],
+    "sourceMap": true,
+    "declaration": false,
+    "declarationMap": false,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+
+    // The recorder walks values and prototypes it knows nothing about - every
+    // array index and optional member it touches is already guarded at runtime,
+    // and these two flags would only add casts around those guards.
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src", "rolldown.config.ts", "vitest.config.ts"]
+}

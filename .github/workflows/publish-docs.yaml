@@ -1,0 +1,31 @@
+name: Publish docs
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  publish-docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js x64
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install build dependencies
+        run: |
+          npm ci
+          npm run build-dist
+          npm run docs
+      - name: Publish the docs
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs
+          commit_message: 'deploy docs'

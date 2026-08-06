@@ -1,0 +1,68 @@
+{
+  "name": "maplibregl-recorder",
+  "version": "0.0.1",
+  "description": "Records the calls an application makes into maplibre-gl-js and exports them as a self-contained page that replays them, for minimal bug reproductions",
+  "keywords": [
+    "maplibre-gl-js",
+    "debug",
+    "record",
+    "replay",
+    "reproduction"
+  ],
+  "homepage": "https://github.com/HarelM/maplibregl-recorder#readme",
+  "bugs": {
+    "url": "https://github.com/HarelM/maplibregl-recorder/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HarelM/maplibregl-recorder.git"
+  },
+  "author": "Harel Mazor",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/maplibregl-recorder.js",
+  "module": "dist/maplibregl-recorder.mjs",
+  "types": "dist/maplibregl-recorder.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/maplibregl-recorder.mjs",
+      "require": "./dist/maplibregl-recorder.js",
+      "types": "./dist/maplibregl-recorder.d.ts"
+    },
+    "./dist/maplibregl-recorder.css": "./dist/maplibregl-recorder.css"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rolldown -c",
+    "build:watch": "rolldown -c -w",
+    "build-dist": "npm run build && npm run build-css",
+    "test": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "docs": "typedoc --out docs src/index.ts && cp -rf dist docs/ && mkdir -p docs/demo && cp test/demo.html docs/demo/index.html",
+    "build-css": "mkdir -p dist && cp src/recorder-control.css dist/maplibregl-recorder.css"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "maplibre-gl": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@vitest/browser": "^4.1.8",
+    "@vitest/browser-playwright": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.2",
+    "maplibre-gl": "^6.2.0",
+    "playwright": "^1.60.0",
+    "rolldown": "^1.0.3",
+    "rolldown-plugin-dts": "^0.25.2",
+    "typedoc": "^0.28.18",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.2"
+  },
+  "style": "dist/maplibregl-recorder.css"
+}
