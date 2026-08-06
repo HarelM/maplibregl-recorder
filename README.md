@@ -1,5 +1,8 @@
 # maplibregl-recorder
 
+[**API documentation**](https://harelm.github.io/maplibregl-recorder/) ·
+[issues](https://github.com/HarelM/maplibregl-recorder/issues)
+
 Records the calls an application makes into [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js)
 and writes them back out as **a single self-contained HTML page that makes those
 same calls**.
