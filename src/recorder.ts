@@ -42,8 +42,12 @@ const DEFAULT_OPTIONS: Required<Omit<RecorderOptions, 'maplibreVersion'>> = {
     recordGestures: true,
     maxOps: 20000,
     inlineStyle: false,
-    maxDelay: 4000
+    maxDelay: 4000,
+    logCalls: false
 };
+
+/** Longest a single argument is printed as by `logCalls` and `print`. */
+const MAX_LOGGED_ARGUMENT = 80;
 
 const PATCHED_FLAG = '__maplibreglRecorderPatched';
 const WRAPPER_FLAG = '__maplibreglRecorderWrapper';
@@ -208,6 +212,41 @@ export class Recorder {
         this._push({k: 'mark', label: String(label)});
         this._log(`mark: ${label}`);
         return this;
+    }
+
+    /**
+     * Prints everything recorded so far to the console, one line per entry, so
+     * what has been captured can be read without exporting anything.
+     *
+     * The calls MapLibre made into itself are indented under the call that
+     * caused them and marked with `↳`. They never reach the exported script, so
+     * this is the only place they show up - `marker.addTo(map)` is one line, and
+     * the `remove` and `setDraggable` MapLibre reaches it through sit under it.
+     *
+     * @returns the recorder, for chaining
+     */
+    print(): this {
+        this._log(`${this._ops.length} entries${this._recording ? '' : ' (paused)'}`);
+        for (const op of this._ops) console.log(describe(op));
+        return this;
+    }
+
+    /**
+     * Whether every entry is printed to the console as it is recorded. The
+     * {@link RecorderOptions.logCalls} option sets the same thing up front; this
+     * turns it on and off in the middle of a session.
+     *
+     * @example
+     * ```js
+     * MaplibreRecorder.logCalls = true;   // watch the calls come in
+     * ```
+     */
+    get logCalls(): boolean {
+        return this._options.logCalls;
+    }
+
+    set logCalls(enabled: boolean) {
+        this._options.logCalls = !!enabled;
     }
 
     /** The raw recording. */
@@ -527,6 +566,7 @@ export class Recorder {
         // comes next is a new movement, not more of the same one.
         if ((op.k === 'new' || op.k === 'call') && !op.d && !(op as CallOp).g) this._lastGesture = null;
         this._ops.push(op);
+        if (this._options.logCalls) console.log(describe(op));
         this._emitChange();
         return op;
     }
@@ -634,6 +674,36 @@ export class Recorder {
 
 function now(): number {
     return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+/**
+ * One timeline entry as a single line, the form both `logCalls` and `print` show
+ * it in. It is meant to be read while scrolling past, not parsed: arguments are
+ * cut short, and nesting is indentation rather than a number.
+ */
+function describe(op: RecordedOp): string {
+    const at = `${String(op.t).padStart(7)}ms`;
+    const nesting = op.d ? `${'  '.repeat(op.d)}↳ ` : '';
+    const failure = (op as CallOp).err ? `  // threw: ${(op as CallOp).err}` : '';
+
+    switch (op.k) {
+        case 'new':
+            return `${at}  ${nesting}${op.o} = new ${op.c}(${describeArguments(op.a)})${failure}`;
+        case 'call':
+            return `${at}  ${nesting}${op.o}.${op.m}(${describeArguments(op.a)})` +
+                `${op.g ? '  // reconstructed from a gesture' : ''}${failure}`;
+        case 'event':
+            return `${at}  ${op.o} fired '${op.e}'${op.u ? ' (user)' : ''}${op.msg ? `: ${op.msg}` : ''}`;
+        case 'mark':
+            return `${at}  === ${op.label} ===`;
+    }
+}
+
+function describeArguments(values: SerializedValue[]): string {
+    return values.map(value => {
+        const text = JSON.stringify(value) ?? 'undefined';
+        return text.length > MAX_LOGGED_ARGUMENT ? `${text.slice(0, MAX_LOGGED_ARGUMENT)}…` : text;
+    }).join(', ');
 }
 
 /**
