@@ -48,7 +48,7 @@ function element(id?: string): HTMLElement {
 async function createMap(maplibregl: any, options?: Record<string, unknown>): Promise<any> {
     const map = new maplibregl.Map({container: element(), style: STYLE, center: [0, 0], zoom: 2, ...options});
     built.maps.push(map);
-    await new Promise(resolve => map.on('load', resolve));
+    await map.once('load');
     return map;
 }
 
@@ -119,7 +119,7 @@ test('an animated camera call is still one call once it has finished animating',
     const since = checkpoint(recorder);
 
     map.panTo([10, 10], {duration: 200});
-    await new Promise(resolve => map.once('moveend', resolve));
+    await map.once('moveend');
     // The frames after it settles are where anything MapLibre drives itself with
     // would turn up, out of any call and so indistinguishable from the
     // application's own.
