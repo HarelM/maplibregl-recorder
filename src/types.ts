@@ -56,6 +56,16 @@ export type RecorderOptions = {
      */
     maxOps?: number;
     /**
+     * Print every entry to the console as it is recorded, one line each, with
+     * the calls MapLibre made into itself indented under the call that caused
+     * them. Useful for seeing what is being captured without exporting first.
+     *
+     * It can be turned on and off while recording, and the whole timeline can be
+     * printed at any time - see {@link Recorder.logCalls} and {@link Recorder.print}.
+     * @defaultValue false
+     */
+    logCalls?: boolean;
+    /**
      * Embed the result of `map.getStyle()` in the export instead of relying on
      * the original style URL. Useful when the style is not publicly reachable.
      * @defaultValue false

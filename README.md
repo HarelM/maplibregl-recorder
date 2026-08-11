@@ -146,6 +146,39 @@ The split is deliberate:
 | `RecorderControl` | the front end. Buttons, and turning a recording into a page and putting it somewhere. |
 | `emitScript` / `buildReproPage` | plain functions, for exporting with no user interface at all. |
 
+### Watch what it captures
+
+The recording is readable from the console at any time, one line per entry:
+
+```js
+MaplibreRecorder.print();
+```
+
+```
+[maplibregl-recorder] 9 entries
+     14ms  map#1 = new Map({"style":"https://demotiles.maplibre.org/style.json","center":[11.38,47.…)
+    412ms  map#1 fired 'load'
+    987ms  marker#1 = new Marker()
+    987ms  marker#1.setLngLat([11.382,47.313])
+    988ms  marker#1.addTo({"$":"ref","v":"map#1"})
+    988ms    ↳ marker#1.remove()
+    988ms    ↳ marker#1.setDraggable(false)
+   1204ms  === the bug is on screen here ===
+   1204ms  map#1.flyTo({"center":[11.4,47.3],"zoom":14})
+```
+
+Or follow it as it happens, with the `logCalls` option or the property of the
+same name:
+
+```js
+MaplibreRecorder.attach(maplibregl, {logCalls: true});
+MaplibreRecorder.logCalls = false;  // and off again, mid-session
+```
+
+The `↳` lines are the calls MapLibre made into itself while one of yours was
+still running. They never reach the exported script — this is the only place they
+show up.
+
 ## Export
 
 The ⤓ button saves `maplibre-repro.html`. Everything it does is on the control
@@ -229,7 +262,12 @@ has the list. Two of them matter for reproductions that leave your machine:
 Captured:
 
 - constructor options for `Map`, `Marker`, `Popup` and the controls
-- every state-changing method call, in order, with timings
+- every state-changing method call, in order, with timings — **once each**, under
+  the name you called. Many MapLibre methods are thin wrappers over another one
+  (`panTo`, `zoomTo` and `fitBounds` go through `easeTo`; `setCenter`, `setZoom`
+  and `setBearing` through `jumpTo`; `marker.addTo` calls `remove` on its way);
+  what the library reaches your call through is its own business, and the script
+  gets your `map.panTo(...)` rather than that plus the `easeTo` underneath it
 - geographic types, DOM elements (with their computed styles frozen inline),
   images, `ImageData` and typed arrays
 - map events, as annotations
@@ -280,6 +318,17 @@ npm run build-dist  # the bundle, plus the control's stylesheet
 npm run typecheck
 npm run docs        # the generated API documentation
 ```
+
+```bash
+npm test                      # node tests, plus a real map in a real browser
+npx vitest run --project node # just the fast ones
+```
+
+`*.browser.test.ts` runs in Chromium through Playwright — `npx playwright install
+chromium` once. Those are the end to end tests: they drive a real map with an
+inline style, so nothing there touches the network, and they check the recording,
+the exported script, and that running that script lands a fresh map exactly where
+the recorded one ended up.
 
 The demo at `test/demo.html` browses a list of places with prev/next buttons, with
 terrain on by default (`?terrain=0` turns it off), and has the recorder attached
