@@ -1,6 +1,6 @@
 {
   "name": "maplibregl-recorder",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Records the calls an application makes into maplibre-gl-js and exports them as a self-contained page that replays them, for minimal bug reproductions",
   "keywords": [
     "maplibre-gl-js",
