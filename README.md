@@ -49,9 +49,17 @@ Requires **MapLibre GL JS 6 or later**, which ships as an ES module.
 
 ## Install
 
+Not on npm. Each [release](https://github.com/HarelM/maplibregl-recorder/releases)
+carries the packed tarball, which npm installs like any other package:
+
 ```bash
-npm install --save-dev maplibregl-recorder
+npm install --save-dev https://github.com/HarelM/maplibregl-recorder/releases/download/v0.0.3/maplibregl-recorder-0.0.3.tgz
 ```
+
+The version is in the file name, so there is no floating "latest" URL — bump both
+halves by hand to upgrade. Installing the repository directly
+(`npm install github:HarelM/maplibregl-recorder`) does **not** work: `dist` is not
+committed and nothing builds it on install.
 
 ## Record
 
@@ -76,12 +84,16 @@ or straight from a page, with no build step:
 ```html
 <script type="module">
     import * as maplibre from 'https://unpkg.com/maplibre-gl@6/dist/maplibre-gl.mjs';
-    import { MaplibreRecorder } from 'https://unpkg.com/maplibregl-recorder/dist/maplibregl-recorder.mjs';
+    import { MaplibreRecorder } from 'https://harelm.github.io/maplibregl-recorder/dist/maplibregl-recorder.mjs';
 
     const maplibregl = {...maplibre};
     MaplibreRecorder.attach(maplibregl);
 </script>
 ```
+
+That URL is the build of `main`, served alongside the API documentation from
+GitHub Pages. It is unversioned and moves with the branch — fine for a debugging
+session, not something to depend on.
 
 The package defines no globals. Everything is an import, including from a
 `<script type="module">` — so nothing of the recorder's ends up on `window`,
@@ -120,7 +132,7 @@ map.addControl(new RecorderControl(), 'bottom-right');
 ```
 
 ```html
-<link rel="stylesheet" href="https://unpkg.com/maplibregl-recorder/dist/maplibregl-recorder.css" />
+<link rel="stylesheet" href="https://harelm.github.io/maplibregl-recorder/dist/maplibregl-recorder.css" />
 ```
 
 Four icon buttons:
