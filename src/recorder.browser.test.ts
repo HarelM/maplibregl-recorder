@@ -86,6 +86,22 @@ test('records the map and the calls made on it', async () => {
     expect(emitScript(recorder.toJSON())).toContain('const map = new maplibregl.Map({');
 });
 
+test('waits for recorded images to decode before replaying addImage', async () => {
+    const {recorder, maplibregl} = attach();
+    const map = await createMap(maplibregl);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const image = new Image();
+    image.src = canvas.toDataURL();
+    await image.decode();
+
+    map.addImage('test', image);
+
+    const script = emitScript(recorder.toJSON());
+    expect(script).toContain('const image = new Image(1, 1);');
+    expect(script).toContain('await image.decode();\nmap.addImage(\'test\', image);');
+});
+
 test('records a method that MapLibre implements through another one only once', async () => {
     const {recorder, maplibregl} = attach();
     const map = await createMap(maplibregl);

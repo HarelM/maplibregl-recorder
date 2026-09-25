@@ -375,7 +375,7 @@ function hoistElement(value: Record<string, any>, ctx: EmitContext): string {
 function hoistImage(value: Record<string, any>, ctx: EmitContext): string {
     const name = local('image', ctx);
     ctx.prelude.push(`const ${name} = new Image(${value['w']}, ${value['h']});`);
-    if (value['v']) ctx.prelude.push(`${name}.src = ${quote(value['v'])};`);
+    if (value['v']) ctx.prelude.push(`${name}.src = ${quote(value['v'])};`, `await ${name}.decode();`);
     return name;
 }
 
