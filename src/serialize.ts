@@ -108,11 +108,11 @@ function serializeKnownType(value: object, ctx: SerializeContext): SerializedVal
         return {$: 'pt', v: [anyValue.x, anyValue.y]};
     }
     if (value instanceof Date) return {$: 'date', v: value.toISOString()};
+    if (isImageLike(value)) return serializeImage(value);
     if (typeof Element !== 'undefined' && value instanceof Element) return serializeElement(value, ctx);
     if (typeof ImageData !== 'undefined' && value instanceof ImageData) {
         return {$: 'imgdata', w: value.width, h: value.height, v: bytesToBase64(new Uint8Array(value.data.buffer))};
     }
-    if (isImageLike(value)) return serializeImage(value);
     if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
         const view = value as Uint8Array;
         return {$: 'ta', c: ctorName, v: bytesToBase64(new Uint8Array(view.buffer, view.byteOffset, view.byteLength))};
