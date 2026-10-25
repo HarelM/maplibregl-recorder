@@ -252,6 +252,9 @@ Everything is meant to be edited:
   comment saying it is a reconstruction rather than a call anyone made.
 - a call that threw during recording keeps its error as a trailing comment.
 - the map is `window.map`, so the console can poke at it.
+- with `captureTiles`, the stored responses come first, as a `recordedResponses`
+  map with the `addProtocol` call that serves them. This is the only thing the page
+  declares that the application did not build.
 
 Values with no literal syntax are written out in full rather than through a
 helper: a marker element is a `createContextualFragment(...)` line, an image is
@@ -268,6 +271,74 @@ has the list. Two of them matter for reproductions that leave your machine:
 - `inlineStyle` embeds the resolved style, which is what you want when the style
   URL needs authentication — but the embedded style still contains its tile URLs,
   so read it before sharing.
+- `captureTiles` embeds the tiles themselves — see below. Whatever access control
+  they were behind does not travel with them: anyone with the page has the data.
+  Check that your tile provider's terms allow that before you send it anywhere.
+
+## Tiles behind access control
+
+A reproduction normally fetches its tiles again, from the same URLs. When those
+tiles need a login, a short-lived token or an allow-listed IP, nobody else can
+load them, and the reproduction shows an empty map.
+
+`captureTiles` stores the responses while you record and builds them into the
+exported page:
+
+```js
+MaplibreRecorder.attach(maplibregl, {captureTiles: 300});
+```
+
+It is off by default (`0`). While it is on, every request MapLibre makes goes
+through a protocol registered by the recorder, which makes the request as usual,
+with your `transformRequest` still deciding the URL and headers, and keeps a copy
+of the response. The style, TileJSON, sprites and glyphs are always kept. Tiles are
+kept until the number you gave is reached; after that they come from the network,
+and the console says so once. The exported page serves everything it holds with
+`maplibregl.addProtocol`, and sends everything else to the network as before.
+
+It needs `attach` with a namespace, because `addProtocol` cannot be reached from a
+map instance, so `attachToMap` cannot do it.
+
+### How many tiles to store
+
+Each tile is a source at one zoom and position, so the count adds up across
+sources: a basemap with terrain is two sources, a hillshade on top is a third.
+Very roughly, per source:
+
+- **one flat view** of a 1280×800 map is about 12 vector tiles (512px), or about
+  40 raster tiles (256px).
+- **pitch** multiplies that by three to five, because the tiles towards the horizon
+  are at lower zooms and there are many of them.
+- **every camera move to a new place** is another view's worth. A `flyTo` zooms out
+  and back in on the way, so it costs several.
+
+Starting points:
+
+| what you record | `captureTiles` |
+| --- | --- |
+| a bug on a single view, flat | 50 |
+| a single view, pitched or with terrain | 200 |
+| a few moves or a `flyTo` | 500 |
+| a long session | 1000 or more |
+
+Every tile goes into the page as base64, about a third larger than the tile itself.
+Vector tiles are typically 20–100 KB, so 500 of them make a page of tens of
+megabytes. That is too big to paste into JS Bin, and slow to open.
+
+To keep the page small, record only what the bug needs: open the application at
+the place where the bug shows, start recording, do the few steps that show it, and
+export. `MaplibreRecorder.print()` shows how many tiles have been stored so far. If
+the reproduction has blank or missing tiles, the budget ran out before the
+recording did. Record again with a larger number.
+
+Two things are not served from the page even when they were captured:
+
+- URLs that depend on the screen. Sprites (`@2x`) and `{ratio}` tile URLs differ
+  with `devicePixelRatio`, so a reproduction opened on a different screen asks for
+  different URLs and goes to the network for them.
+- anything after a `map.setTransformRequest(...)` in the script. It replaces the
+  `transformRequest` that routes requests to the stored responses, so delete it
+  from the script or merge the two.
 
 ## What is and is not captured
 
@@ -311,8 +382,10 @@ Not captured:
   **async** callback — `setTerrain` once the style resolves, for instance — looks
   like an application call and is emitted. Harmless, and visible in the script, so
   it can be deleted.
-- network responses. The reproduction re-fetches tiles, so a bug that depends on a
-  specific tile response will not reproduce if that response has changed.
+- network responses, unless `captureTiles` is on. The reproduction re-fetches
+  tiles, so a bug that depends on a specific tile response will not reproduce if
+  that response has changed, and tiles behind access control will not load at all.
+  See [Tiles behind access control](#tiles-behind-access-control).
 
 ## API
 
