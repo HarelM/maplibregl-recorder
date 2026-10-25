@@ -38,6 +38,7 @@ export type {
     MarkOp,
     NewOp,
     RecordedOp,
+    RecordedResponse,
     RecorderOptions,
     Recording,
     RecordingEnvironment,

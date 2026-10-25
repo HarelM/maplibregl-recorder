@@ -189,7 +189,10 @@ function truncate(text: string, max: number): string {
     return text.length > max ? `${text.slice(0, max)}/* ...truncated by the recorder... */` : text;
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
+    // Built in since 2025. The loop below is for the browsers from before then.
+    if (typeof bytes.toBase64 === 'function') return bytes.toBase64();
+
     const chunkSize = 0x8000;
     let binary = '';
     for (let i = 0; i < bytes.length; i += chunkSize) {

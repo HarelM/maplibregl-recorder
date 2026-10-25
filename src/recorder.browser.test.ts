@@ -72,6 +72,32 @@ function nestedCalls(ops: RecordedOp[]): string[] {
     return ops.filter((op): op is CallOp => op.k === 'call' && !!op.d).map(op => op.m);
 }
 
+/**
+ * A style URL and a raster source on hosts that do not exist, served by a
+ * stand-in `fetch` - the closest a test gets to tiles behind access control
+ * without going near the network.
+ */
+async function serveRestrictedTiles() {
+    const canvas = new OffscreenCanvas(1, 1);
+    canvas.getContext('2d')!.fillRect(0, 0, 1, 1);
+    const png = await canvas.convertToBlob({type: 'image/png'});
+    const style = {
+        version: 8,
+        sources: {tiles: {type: 'raster', tiles: ['https://tiles.invalid/{z}/{x}/{y}.png'], tileSize: 512}},
+        layers: [{id: 'tiles', type: 'raster', source: 'tiles'}]
+    };
+    return vi.spyOn(window, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.startsWith('https://styles.invalid/')) return Response.json(style);
+        if (url.startsWith('https://tiles.invalid/')) return new Response(png);
+        return new Response(null, {status: 404});
+    });
+}
+
+function fetchedUrls(fetch: ReturnType<typeof vi.spyOn>): string[] {
+    return fetch.mock.calls.map(([input]: any[]) => input instanceof Request ? input.url : String(input));
+}
+
 test('records the map and the calls made on it', async () => {
     const {recorder, maplibregl} = attach();
     const map = await createMap(maplibregl);
@@ -278,4 +304,65 @@ test('prints the whole timeline on demand, nesting what MapLibre called itself',
     expect(lines.some(line => /marker#1\.addTo\(/.test(line) && !line.includes('↳'))).toBe(true);
     expect(lines.some(line => line.includes('↳'))).toBe(true);
     expect(lines.some(line => line.includes('=== a note ==='))).toBe(true);
+});
+
+test('stores no responses while captureTiles is off', async () => {
+    await serveRestrictedTiles();
+    const {recorder, maplibregl} = attach();
+    const map = await createMap(maplibregl, {style: 'https://styles.invalid/style.json', zoom: 1});
+    await map.once('idle');
+
+    expect(recorder.toJSON().responses).toEqual([]);
+    expect(emitScript(recorder.toJSON())).not.toContain('recordedResponses');
+});
+
+test('stores the style and at most captureTiles tiles, under the URL MapLibre asked for', async () => {
+    const fetch = await serveRestrictedTiles();
+    const {recorder, maplibregl} = attach({captureTiles: 2});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const map = await createMap(maplibregl, {
+        style: 'https://styles.invalid/style.json',
+        zoom: 1,
+        transformRequest: (url: string) => ({url: `${url}?token=secret`})
+    });
+    await map.once('idle');
+
+    const responses = recorder.toJSON().responses;
+    expect(responses.filter(response => response.resource === 'Style').map(response => response.url))
+        .toEqual(['https://styles.invalid/style.json']);
+    const tiles = responses.filter(response => response.resource === 'Tile');
+    expect(tiles).toHaveLength(2);
+    expect(tiles.every(tile => tile.kind === 'binary' && !tile.url.includes('token'))).toBe(true);
+    // The application's own transformRequest still decided where they came from.
+    expect(fetchedUrls(fetch).filter(url => url.startsWith('https://tiles.invalid/')).every(url => url.endsWith('?token=secret'))).toBe(true);
+    expect(warn.mock.calls.some(call => String(call[0]).includes('captureTiles (2) reached'))).toBe(true);
+});
+
+test('exports a page that serves the captured tiles without the network', async () => {
+    await serveRestrictedTiles();
+    const {recorder, maplibregl} = attach({captureTiles: 50});
+    const map = await createMap(maplibregl, {style: 'https://styles.invalid/style.json', zoom: 1});
+    await map.once('idle');
+    recorder.stop();
+
+    const script = emitScript(recorder.toJSON());
+    expect(script).toContain("maplibregl.addProtocol('recorded'");
+    expect(script).toContain('transformRequest: (url, resourceType) => recordedResponses.has(url)');
+
+    // From here on there is no network at all.
+    vi.restoreAllMocks();
+    const offline = vi.spyOn(window, 'fetch').mockRejectedValue(new TypeError('offline'));
+    element('map');
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+    await new AsyncFunction('maplibregl', script)(maplibregl);
+
+    const replayed = (window as any).map;
+    built.maps.push(replayed);
+    const errors: string[] = [];
+    replayed.on('error', (event: any) => errors.push(String(event.error?.message)));
+    await replayed.once('idle');
+
+    expect(errors).toEqual([]);
+    expect(replayed.getStyle().sources.tiles.tiles).toEqual(['https://tiles.invalid/{z}/{x}/{y}.png']);
+    expect(offline).not.toHaveBeenCalled();
 });

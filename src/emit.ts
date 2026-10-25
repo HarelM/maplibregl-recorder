@@ -1,4 +1,4 @@
-import type { CallOp, EventOp, ExecutedOp, NewOp, RecordedOp, Recording, SerializedValue } from './types';
+import type { CallOp, EventOp, ExecutedOp, NewOp, RecordedOp, RecordedResponse, Recording, SerializedValue } from './types';
 
 /**
  * Turns a recording into readable JavaScript.
@@ -36,6 +36,9 @@ const STYLE_METHOD = /^(add|remove|set|move)(Source|Layer|Image|Sprite|Terrain|S
  */
 const INTERNAL_OPTION = new Set(['easing', 'validate']);
 
+/** The protocol the exported page serves the responses `captureTiles` kept from. */
+const REPLAY_PROTOCOL = 'recorded';
+
 /** Characters a single-quoted literal cannot carry verbatim. */
 const UNSAFE = /[\\\u0000-\u001f\u2028\u2029]/;
 
@@ -67,7 +70,38 @@ export function emitScript(recording: Recording): string {
         locals: {},
         totals: countLocals(recording.ops)
     };
-    return emitStatements(recording, ctx).join('\n');
+    return [...emitResponses(recording.responses ?? []), ...emitStatements(recording, ctx)].join('\n');
+}
+
+/**
+ * The responses `captureTiles` kept, and the protocol that serves them. The
+ * maps' `transformRequest` sends a request here when its URL is one of them,
+ * and to the network as usual when it is not.
+ */
+function emitResponses(responses: RecordedResponse[]): string[] {
+    if (!responses.length) return [];
+    const entries = responses.map(response => `${INDENT}[${quote(response.url)}, ${emitResponseBody(response)}]`);
+    return [
+        '// Responses captured while recording, so the map does not need access to',
+        '// the servers they came from. Anything not listed comes from the network.',
+        'const recordedResponses = new Map([',
+        entries.join(',\n'),
+        ']);',
+        '// A copy each time: MapLibre may hand a buffer to a worker, which empties it.',
+        `maplibregl.addProtocol(${quote(REPLAY_PROTOCOL)}, async ({url}) => ` +
+            `({data: structuredClone(recordedResponses.get(url.slice(${`${REPLAY_PROTOCOL}://`.length})))}));`,
+        ''
+    ];
+}
+
+function emitResponseBody(response: RecordedResponse): string {
+    switch (response.kind) {
+        case 'binary': return `${bytes(response.data as string)}.buffer`;
+        // JSON is already an expression, and emitting it through `emitValue`
+        // would drop the keys that function treats as the recorder's own.
+        case 'json': return JSON.stringify(response.data).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+        default: return quote(String(response.data));
+    }
 }
 
 /**
@@ -246,9 +280,22 @@ function emitNew(op: NewOp, recording: Recording, ctx: EmitContext): string {
         const options = args[0] && typeof args[0] === 'object' ? args[0] as Record<string, SerializedValue> : {};
         args = [{...options, style: recording.style}, ...args.slice(1)];
     }
+    if (op.c === 'Map' && recording.responses?.length) {
+        const options = args[0] && typeof args[0] === 'object' ? args[0] as Record<string, SerializedValue> : {};
+        args = [{...options, transformRequest: {$: 'js', v: replayTransform(options['transformRequest'], ctx)}}, ...args.slice(1)];
+    }
 
     const call = `new maplibregl.${op.c}${emitArguments(args, ctx)}`;
     return name ? `const ${name} = ${call};` : `${call};`;
+}
+
+/**
+ * A `transformRequest` that sends the captured URLs to the replay protocol and
+ * hands everything else to the application's own, if it had one.
+ */
+function replayTransform(original: SerializedValue, ctx: EmitContext): string {
+    const fallback = original === undefined ? 'undefined' : `${emitValue(original, ctx, INDENT)}(url, resourceType)`;
+    return `(url, resourceType) => recordedResponses.has(url) ? {url: \`${REPLAY_PROTOCOL}://\${url}\`} : ${fallback}`;
 }
 
 function emitCall(op: CallOp, ctx: EmitContext): string {
@@ -322,6 +369,8 @@ function emitTagged(value: Record<string, any>, ctx: EmitContext, indent: string
         case 'date': return `new Date(${quote(value['v'])})`;
         case 'ref': return ctx.names[value['v']] ?? `undefined /* ${value['v']} */`;
         case 'circ': return 'undefined /* circular reference */';
+        // Source the emitter wrote itself, rather than anything that was recorded.
+        case 'js': return value['v'];
         case 'trunc': return 'undefined /* truncated by the recorder */';
         case 'ab': return `${bytes(value['v'])}.buffer`;
         case 'ta':

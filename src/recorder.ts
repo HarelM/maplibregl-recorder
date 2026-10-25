@@ -1,5 +1,5 @@
-import { serialize, type SerializeContext } from './serialize';
-import type { CallOp, MapCallState, NewOp, PendingOp, RecordedOp, RecorderOptions, Recording, SerializedValue } from './types';
+import { bytesToBase64, serialize, type SerializeContext } from './serialize';
+import type { CallOp, MapCallState, NewOp, PendingOp, RecordedOp, RecordedResponse, RecorderOptions, Recording, SerializedValue } from './types';
 
 const RECORDER_VERSION = '1.0.0';
 
@@ -42,12 +42,25 @@ const DEFAULT_OPTIONS: Required<Omit<RecorderOptions, 'maplibreVersion'>> = {
     recordGestures: true,
     maxOps: 20000,
     inlineStyle: false,
+    captureTiles: 0,
     maxDelay: 4000,
     logCalls: false
 };
 
 /** Longest a single argument is printed as by `logCalls` and `print`. */
 const MAX_LOGGED_ARGUMENT = 80;
+
+/**
+ * The protocol `captureTiles` routes requests through while recording, as
+ * `maplibregl-recorder://https://...`. MapLibre hands a URL with a protocol it
+ * does not know to whatever `addProtocol` registered for it, on the main thread
+ * even when the request came from a worker - which is what makes a tile request
+ * something the recorder can see.
+ */
+const CAPTURE_PROTOCOL = 'maplibregl-recorder';
+
+/** A URL that names a scheme, as opposed to one relative to the page. */
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 const PATCHED_FLAG = '__maplibreglRecorderPatched';
 const WRAPPER_FLAG = '__maplibreglRecorderWrapper';
@@ -121,6 +134,16 @@ export class Recorder {
      * entry rather than rewriting a finished one.
      */
     private _lastGesture: CallOp | null = null;
+    /** What `captureTiles` kept, by the URL MapLibre asked for. */
+    private _responses: Map<string, RecordedResponse> = new Map();
+    /** The tiles routed through the capture protocol so far, against the budget. */
+    private _capturedTiles: Set<string> = new Set();
+    /**
+     * The URL MapLibre asked for, by the one the request ended up at. The two
+     * differ when `transformRequest` adds a token, and the reproduction looks
+     * responses up by the first - its own `transformRequest` may not survive.
+     */
+    private _requestedAs: Map<string, {url: string; resource: string}> = new Map();
 
     /**
      * Patches a MapLibre namespace and starts recording. Call this before the
@@ -145,6 +168,7 @@ export class Recorder {
         for (const name of PATCHED_CLASSES) {
             if (ns[name]) this._patchPrototypeChain(ns[name].prototype, name);
         }
+        if (this._options.captureTiles > 0) this._registerCaptureProtocol(ns);
 
         this.start();
         this._log(`attached to MapLibre ${this._libraryVersion()} - recording`);
@@ -163,6 +187,9 @@ export class Recorder {
     attachToMap(map: any, options?: RecorderOptions): this {
         this._options = {...this._options, ...options};
         activeRecorder = this;
+        if (this._options.captureTiles > 0) {
+            this._warn('captureTiles needs attach(namespace) - addProtocol cannot be reached from a map, so no tiles will be stored');
+        }
         this._patchPrototypeChain(Object.getPrototypeOf(map), 'Map');
         this.start();
         this._register(map, 'Map', [this._snapshotMapOptions(map)]);
@@ -192,6 +219,9 @@ export class Recorder {
         this._opSeq = 0;
         this._overflowed = false;
         this._lastGesture = null;
+        this._responses.clear();
+        this._capturedTiles.clear();
+        this._requestedAs.clear();
         this._startedAt = now();
         this._emitChange();
         return this;
@@ -226,7 +256,10 @@ export class Recorder {
      * @returns the recorder, for chaining
      */
     print(): this {
-        this._log(`${this._ops.length} entries${this._recording ? '' : ' (paused)'}`);
+        const captured = this._options.captureTiles > 0 ?
+            `, ${this._capturedTiles.size} of ${this._options.captureTiles} tiles captured` :
+            '';
+        this._log(`${this._ops.length} entries${captured}${this._recording ? '' : ' (paused)'}`);
         for (const op of this._ops) console.log(describe(op));
         return this;
     }
@@ -264,6 +297,7 @@ export class Recorder {
             container: this._containerSize(),
             style: this._options.inlineStyle ? this._inlineStyle() : null,
             maxDelay: this._options.maxDelay,
+            responses: [...this._responses.values()],
             // A copy: recording carries on after this call, and a recording that
             // grew while its reader was walking it would be a trap.
             ops: [...this._ops]
@@ -324,13 +358,16 @@ export class Recorder {
             // Whatever the constructor builds for itself - the `Map` constructor
             // adds the attribution and logo controls, for instance - is MapLibre's
             // own doing, and emitting it would duplicate it.
+            const capturing = name === 'Map' && !!recorder?._options.captureTiles;
             if (recorder) recorder._depth++;
             let instance: any;
             try {
-                instance = Reflect.construct(Original, args, target === Wrapped ? Original : target);
+                const constructed = capturing ? [recorder!._withCapture(args[0]), ...args.slice(1)] : args;
+                instance = Reflect.construct(Original, constructed, target === Wrapped ? Original : target);
             } finally {
                 if (recorder) recorder._depth--;
             }
+            if (capturing) recorder!._captureRequests(instance);
             try {
                 recorder?._register(instance, name, serialized, args);
             } catch (error) {
@@ -569,6 +606,120 @@ export class Recorder {
         if (this._options.logCalls) console.log(describe(op));
         this._emitChange();
         return op;
+    }
+
+    // -----------------------------------------------------------------
+    // Network capture
+    // -----------------------------------------------------------------
+
+    private _registerCaptureProtocol(namespace: any) {
+        if (typeof namespace.addProtocol !== 'function') {
+            this._warn('captureTiles is on but this namespace has no addProtocol - no tiles will be stored');
+            return;
+        }
+        namespace.addProtocol(CAPTURE_PROTOCOL, (request: any, abortController: AbortController) =>
+            (activeRecorder ?? this)._fetchAndKeep(request, abortController));
+    }
+
+    /**
+     * The map options with a `transformRequest` that routes through the capture
+     * protocol. Only the constructor gets these: the style request goes out
+     * while it is still running, before {@link _captureRequests} can step in.
+     */
+    private _withCapture(options: any): any {
+        if (!options || typeof options !== 'object') return options;
+        const transform = options.transformRequest;
+        return {
+            ...options,
+            transformRequest: (url: string, resource: string) =>
+                this._route(url, resource, typeof transform === 'function' ? transform(url, resource) : undefined)
+        };
+    }
+
+    /**
+     * Routes every later request through the capture protocol too, including
+     * after a `setTransformRequest` - the request manager calls whatever
+     * function it currently holds, and this wraps the manager rather than the
+     * function. A request the constructor's options already routed is left alone:
+     * it no longer starts with `http`.
+     */
+    private _captureRequests(map: any) {
+        const manager = map?._requestManager;
+        if (!manager || typeof manager.transformRequest !== 'function') {
+            this._warn('captureTiles: this version of MapLibre has no request manager to hook - tiles will not be stored');
+            return;
+        }
+        const transform = manager.transformRequest;
+        manager.transformRequest = (url: string, resource: string) =>
+            this._route(url, resource, transform.call(manager, url, resource));
+    }
+
+    /**
+     * Sends a request through the capture protocol, if it is one to keep. URLs
+     * with a protocol of their own - `pmtiles://`, `data:`, `blob:` - are left
+     * alone, and so is every tile once the budget is spent.
+     */
+    private _route(url: string, resource: string, request: any): any {
+        if (request && typeof request.then === 'function') {
+            return request.then((resolved: any) => this._route(url, resource, resolved));
+        }
+        const resolved = request ?? {url};
+        const target = String(resolved.url ?? url);
+        if (!this._recording || (HAS_SCHEME.test(target) && !/^https?:/i.test(target))) return resolved;
+
+        if (resource === 'Tile' && !this._capturedTiles.has(url)) {
+            if (this._capturedTiles.size >= this._options.captureTiles) return resolved;
+            this._capturedTiles.add(url);
+            if (this._capturedTiles.size === this._options.captureTiles) {
+                this._warn(`captureTiles (${this._options.captureTiles}) reached - further tiles come from the network`);
+            }
+        }
+        this._requestedAs.set(target, {url, resource});
+        return {...resolved, url: `${CAPTURE_PROTOCOL}://${target}`};
+    }
+
+    /** The capture protocol: the request MapLibre would have made, and a copy of what came back. */
+    private async _fetchAndKeep(request: any, abortController: AbortController): Promise<any> {
+        const url = String(request.url).slice(`${CAPTURE_PROTOCOL}://`.length);
+        const headers = new Headers(request.headers);
+        if (request.type === 'json' && !headers.has('Accept')) headers.set('Accept', 'application/json');
+
+        const response = await fetch(url, {
+            method: request.method || 'GET',
+            body: request.body,
+            credentials: request.credentials,
+            headers,
+            cache: request.cache,
+            referrerPolicy: request.referrerPolicy,
+            signal: abortController.signal
+        });
+        if (!response.ok) {
+            // Shaped like MapLibre's own AJAXError, which is what it checks for.
+            throw Object.assign(new Error(response.statusText), {
+                name: 'AJAXError', status: response.status, statusText: response.statusText, url, body: await response.blob()
+            });
+        }
+
+        const binary = request.type === 'arrayBuffer' || request.type === 'image';
+        const data = binary ? await response.arrayBuffer() : request.type === 'json' ? await response.json() : await response.text();
+
+        // Encoded now: MapLibre may transfer the buffer to a worker, which empties it.
+        const requested = this._requestedAs.get(url);
+        if (requested && this._recording) {
+            this._responses.set(requested.url, {
+                url: requested.url,
+                resource: requested.resource,
+                kind: binary ? 'binary' : request.type === 'json' ? 'json' : 'text',
+                // A copy of JSON too: MapLibre is free to change the object it is handed.
+                data: binary ? bytesToBase64(new Uint8Array(data)) : structuredClone(data)
+            });
+        }
+        return {
+            data,
+            cacheControl: response.headers.get('Cache-Control'),
+            expires: response.headers.get('Expires'),
+            etag: response.headers.get('ETag')
+        };
     }
 
     // -----------------------------------------------------------------

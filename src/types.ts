@@ -72,6 +72,26 @@ export type RecorderOptions = {
      */
     inlineStyle?: boolean;
     /**
+     * How many tiles to store, so the reproduction works without access to the
+     * servers they came from - tiles behind a login, a short-lived token or an
+     * IP allow-list. `0` turns capturing off.
+     *
+     * While it is on, every request MapLibre makes is routed through a protocol
+     * of the recorder's own, which fetches it as usual and keeps the response.
+     * The style, TileJSON, sprites and glyphs are always kept; tiles are kept
+     * until this many have been stored, and after that come from the network.
+     * The exported page serves everything it holds itself, with `addProtocol`.
+     *
+     * Every stored response ends up in the exported page, so it grows with each
+     * tile - and whatever access control the tiles were behind does not travel
+     * with them. Read the README before sharing a page made with this.
+     *
+     * Needs {@link Recorder.attach} with a namespace: `addProtocol` cannot be
+     * reached from a map instance.
+     * @defaultValue 0
+     */
+    captureTiles?: number;
+    /**
      * Longest pause, in milliseconds, that the exported script waits between two
      * calls. Longer gaps in the recording are shortened to this.
      * @defaultValue 4000
@@ -192,6 +212,21 @@ export type RecordingEnvironment = {
 };
 
 /**
+ * A network response MapLibre received while recording, kept by
+ * {@link RecorderOptions.captureTiles}.
+ */
+export type RecordedResponse = {
+    /** The URL as MapLibre asked for it, before `transformRequest` touched it. */
+    url: string;
+    /** MapLibre's resource type, e.g. `Tile`, `Style` or `Glyphs`. */
+    resource: string;
+    /** How the body is stored: parsed JSON, base64 encoded bytes, or plain text. */
+    kind: 'json' | 'binary' | 'text';
+    /** The body. */
+    data: unknown;
+};
+
+/**
  * The complete recording, as produced by {@link Recorder.toJSON}.
  */
 export type Recording = {
@@ -209,6 +244,8 @@ export type Recording = {
     style: SerializedValue;
     /** Value of {@link RecorderOptions.maxDelay}. */
     maxDelay: number;
+    /** Responses kept by {@link RecorderOptions.captureTiles}, empty when it is off. */
+    responses: RecordedResponse[];
     /** The recorded timeline. */
     ops: RecordedOp[];
 };
